@@ -18,28 +18,25 @@ from beeai_framework.workflows.agent import AgentWorkflowInput, AgentWorkflow
 from beeai_framework.workflows.workflow import WorkflowError
 
 # MCP Tool
-from beeai_framework.tools.mcp_tools import MCPTool
+from beeai_framework.tools.mcp.mcp import MCPTool
 from mcp.client.stdio import stdio_client
 from mcp import ClientSession, StdioServerParameters
 
 # Create connection to Tool Server
 server_params = StdioServerParameters(
-    command="uv",
-    args=[
-        "run",
-        "server.py",
-    ],
+    command="python",
+    args=["server.py"],
     env=None,
 )
 
 
-async def tools_from_client() -> MCPTool:
+async def tools_from_client() -> list[MCPTool]:
     async with (
         stdio_client(server_params) as (read, write),
         ClientSession(read, write) as session,
     ):
         await session.initialize()
-        return await MCPTool.from_client(session, server_params)
+        return await MCPTool.from_client(session)
 
 
 mcp_tools = asyncio.run(tools_from_client())
@@ -51,16 +48,19 @@ async def process_agent_events(
     """Process agent events and log appropriately"""
 
     if event_meta.name == "error":
-        print("Agent 🤖 : ", event_data["error"])
+        print("Agent 🤖 Error: ", str(event_data))
     elif event_meta.name == "retry":
         print("Agent 🤖 : ", "retrying the action...")
     elif event_meta.name == "update":
         print(
-            f"Agent({event_data['update']['key']}) 🤖 : ",
-            event_data["update"]["parsedValue"],
+            f"Agent({event_data.get('update', {}).get('key', 'unknown')}) 🤖 : ",
+            event_data.get('update', {}).get('parsedValue', 'no value'),
         )
     elif event_meta.name == "newToken":
-        print(event_data["value"].get_text_content(), end="")
+        if hasattr(event_data.get("value", {}), 'get_text_content'):
+            print(event_data["value"].get_text_content(), end="")
+        else:
+            print(str(event_data.get("value", "")), end="")
 
 
 async def observer(emitter: Emitter) -> None:
@@ -72,14 +72,11 @@ async def main() -> None:
     try:
         workflow = AgentWorkflow(name="Smart assistant")
         workflow.add_agent(
-            agent=AgentWorkflowInput(
-                model_config={"stream": True},
-                name="EmployeeChurn",
-                instructions="You are a churn prediction specialist capable of predicting whether an employee will churn. Respond only if you can provide a useful answer.",
-                tools=mcp_tools,
-                llm=llm,
-                execution=AgentExecutionConfig(max_iterations=3),
-            )
+            name="EmployeeChurn",
+            instructions="You are a churn prediction specialist capable of predicting whether an employee will churn. Respond only if you can provide a useful answer.",
+            tools=mcp_tools,
+            llm=llm,
+            execution=AgentExecutionConfig(max_iterations=3),
         )
 
         employee_sample = {
@@ -91,7 +88,7 @@ async def main() -> None:
         prompt = f"Will this employee churn {employee_sample}?"
         memory = UnconstrainedMemory()
         await memory.add(UserMessage(content=prompt))
-        await workflow.run(messages=memory.messages).observe(observer)
+        await workflow.run(inputs=memory.messages).observe(observer)
 
     except WorkflowError:
         traceback.print_exc()
