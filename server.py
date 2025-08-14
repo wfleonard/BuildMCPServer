@@ -85,7 +85,5 @@ def PredictChurn(data: List[Dict[str, Any]]) -> Dict[str, Any]:
 # Entrypoint
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
-    # Run as a remote/hosted MCP server over HTTP (for Sevalla).
-    # Connect with: https://<your-domain>/mcp from Claude Code or MCP Inspector.
-    port = int(os.environ.get("PORT", "8080"))
-    mcp.run(transport="http", host="0.0.0.0", port=port, path="/mcp")
+    # Run as stdio MCP server for development and testing
+    mcp.run(transport="stdio")
